@@ -1,11 +1,11 @@
 import { loadConfig } from './config.js';
-import { FileStore } from './store.js';
+import { createStore } from './store.js';
 import { createAmazonProvider } from './providers/amazon.js';
 import { createBitrefillClient } from './bitrefill.js';
 import { createServer } from './server.js';
 
 const config = loadConfig();
-const store = new FileStore(config.dataFile);
+const store = createStore(config);
 await store.init();
 
 const amazonProvider = createAmazonProvider(config);

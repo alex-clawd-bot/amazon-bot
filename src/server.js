@@ -1,11 +1,38 @@
+import fs from 'node:fs/promises';
 import http from 'node:http';
+import path from 'node:path';
 import { URL } from 'node:url';
 import { normalizeEmail } from './store.js';
+
+const publicDir = path.resolve(process.cwd(), 'public');
+const contentTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon'
+};
 
 export function createServer({ config, store, amazonProvider, bitrefillClient }) {
   return http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
+
+      if (isReadMethod(request.method) && (url.pathname === '/' || url.pathname === '/index.html')) {
+        return serveStaticFile(response, 'index.html', request.method);
+      }
+
+      if (isReadMethod(request.method) && !url.pathname.startsWith('/api/') && url.pathname !== '/health') {
+        const served = await tryServePublicAsset(response, url.pathname, request.method);
+        if (served) {
+          return;
+        }
+      }
 
       if (request.method === 'GET' && url.pathname === '/health') {
         return sendJson(response, 200, {
@@ -21,7 +48,7 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
 
       if (request.method === 'GET' && url.pathname === '/api/stats') {
         return sendJson(response, 200, {
-          stats: store.getEmailStats()
+          stats: await store.getEmailStats()
         });
       }
 
@@ -34,11 +61,11 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
         }
 
         const result = await store.addEmail(email);
-        const status = store.getEmailStatus(email);
+        const status = await store.getEmailStatus(email);
         return sendJson(response, result.created ? 201 : 200, {
           created: result.created,
           status,
-          stats: store.getEmailStats()
+          stats: await store.getEmailStats()
         });
       }
 
@@ -50,13 +77,13 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
         }
 
         return sendJson(response, 200, {
-          status: store.getEmailStatus(email)
+          status: await store.getEmailStatus(email)
         });
       }
 
       if (request.method === 'GET' && url.pathname.startsWith('/api/emails/')) {
         const email = normalizeEmail(decodeURIComponent(url.pathname.replace('/api/emails/', '')));
-        const record = store.getEmail(email);
+        const record = await store.getEmail(email);
 
         if (!record) {
           return sendJson(response, 404, { error: 'Email not found.' });
@@ -64,7 +91,7 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
 
         return sendJson(response, 200, {
           email: record,
-          order: store.getOrderByEmail(email)
+          order: await store.getOrderByEmail(email)
         });
       }
 
@@ -99,7 +126,7 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
 
       if (request.method === 'GET' && url.pathname.startsWith('/api/bitrefill/purchases/')) {
         const purchaseId = decodeURIComponent(url.pathname.replace('/api/bitrefill/purchases/', ''));
-        const purchase = store.getBitrefillPurchaseById(purchaseId);
+        const purchase = await store.getBitrefillPurchaseById(purchaseId);
 
         if (!purchase) {
           return sendJson(response, 404, { error: 'Bitrefill purchase not found.' });
@@ -199,6 +226,44 @@ export function createServer({ config, store, amazonProvider, bitrefillClient })
   });
 }
 
+async function tryServePublicAsset(response, pathnameValue, method) {
+  const cleanedPath = path.normalize(pathnameValue).replace(/^\.+/, '');
+  const relativePath = cleanedPath.startsWith(path.sep) ? cleanedPath.slice(1) : cleanedPath;
+
+  if (!relativePath) {
+    return false;
+  }
+
+  try {
+    await serveStaticFile(response, relativePath, method);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+async function serveStaticFile(response, relativePath, method = 'GET') {
+  const filePath = path.resolve(publicDir, relativePath);
+
+  if (!filePath.startsWith(publicDir)) {
+    const error = new Error('Invalid path.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const file = await fs.readFile(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  response.writeHead(200, {
+    'content-type': contentTypes[ext] ?? 'application/octet-stream',
+    'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
+  });
+  response.end(method === 'HEAD' ? undefined : file);
+}
+
 async function readJson(request) {
   const chunks = [];
 
@@ -224,6 +289,10 @@ async function readJson(request) {
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(body, null, 2));
+}
+
+function isReadMethod(method) {
+  return method === 'GET' || method === 'HEAD';
 }
 
 function isValidEmail(email) {

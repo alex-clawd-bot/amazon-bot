@@ -1,14 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs/promises';
 import { createServer } from '../src/server.js';
-import { FileStore } from '../src/store.js';
+import { MemoryStore } from '../src/store.js';
 
 async function createTestApp() {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'amazon-backend-'));
-  const store = new FileStore(path.join(tempDir, 'store.json'));
+  const store = new MemoryStore();
   await store.init();
 
   const server = createServer({
@@ -70,10 +66,23 @@ async function createTestApp() {
     baseUrl,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-      await fs.rm(tempDir, { recursive: true, force: true });
     }
   };
 }
+
+test('homepage serves the giveaway UI', async () => {
+  const app = await createTestApp();
+
+  try {
+    const response = await fetch(`${app.baseUrl}/`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /送你一本書/);
+    assert.match(html, /Email Checker/);
+  } finally {
+    await app.close();
+  }
+});
 
 test('email register returns frontend-friendly status and stats', async () => {
   const app = await createTestApp();

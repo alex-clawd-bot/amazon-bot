@@ -8,7 +8,13 @@ export function loadConfig() {
 
   return {
     port: parseInteger(process.env.PORT, 3000),
-    dataFile: path.resolve(cwd, process.env.DATA_FILE ?? '.data/store.json'),
+    storeProvider: process.env.STORE_PROVIDER ?? 'supabase',
+    supabaseUrl: process.env.SUPABASE_URL ?? '',
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+    supabaseEmailsTable: process.env.SUPABASE_EMAILS_TABLE ?? 'email_registrations',
+    supabaseOrdersTable: process.env.SUPABASE_ORDERS_TABLE ?? 'ebook_orders',
+    supabaseRechargeCardsTable: process.env.SUPABASE_RECHARGE_CARDS_TABLE ?? 'recharge_cards',
+    supabaseBitrefillPurchasesTable: process.env.SUPABASE_BITREFILL_PURCHASES_TABLE ?? 'bitrefill_purchases',
     amazonProvider: process.env.AMAZON_PROVIDER ?? 'mock',
     amazonAutomationUrl: process.env.AMAZON_AUTOMATION_URL ?? '',
     amazonAutomationToken: process.env.AMAZON_AUTOMATION_TOKEN ?? '',

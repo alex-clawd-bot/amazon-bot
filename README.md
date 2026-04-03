@@ -21,11 +21,14 @@ npm install
 npm start
 ```
 
-預設使用 `mock` provider，不會真的對 Amazon 下單；只會模擬成功並落資料。
+預設使用 `Supabase` 當資料儲存層，schema 在 `supabase/schema.sql`。
+完整設定流程在 `docs/supabase-setup.md`。
+Railway 部署說明在 `docs/railway-deploy.md`。
+
+打開 `http://localhost:3000/` 就能看到送書首頁 UI。
 
 ## 前端最先會用到的 API
 前端完整 handoff 文件在 `docs/frontend-api.md`。
-
 
 ### `POST /api/emails`
 
@@ -49,37 +52,11 @@ npm start
 
 前端檢查某個 email 是否已註冊、是否已送過。
 
-即使 email 不存在，也會回 `200`，方便前端直接判斷：
-
-```json
-{
-  "status": {
-    "email": "user@example.com",
-    "exists": false,
-    "alreadySent": false,
-    "status": "not_found",
-    "record": null,
-    "order": null
-  }
-}
-```
+即使 email 不存在，也會回 `200`，方便前端直接判斷。
 
 ### `GET /api/stats`
 
-給前端顯示數字：
-
-```json
-{
-  "stats": {
-    "registeredEmails": 10,
-    "sentEmails": 4,
-    "pendingEmails": 6,
-    "processingEmails": 0,
-    "notSentEmails": 6,
-    "totalOrders": 4
-  }
-}
-```
+給前端顯示數字。
 
 ### `GET /api/emails/:email`
 
@@ -91,38 +68,32 @@ npm start
 
 向 Bitrefill 買 Amazon.com Gift Card code。
 
-```json
-{
-  "amount": 25,
-  "quantity": 1,
-  "requestedByEmail": "ops@example.com"
-}
-```
-
 ### `GET /api/bitrefill/purchases/:id`
 
 查已購買的 Bitrefill 記錄與 code。
 
 ### `POST /api/amazon/recharge-cards/redeem`
 
-```json
-{
-  "code": "ABCD-EFGH-IJKL"
-}
-```
+兌換 Amazon 充值卡。
 
 ### `POST /api/amazon/orders`
 
-```json
-{
-  "email": "user@example.com"
-}
-```
+對指定 email 送固定 ebook。
 
 ## 環境變數
 
-- `PORT`: backend API port
-- `DATA_FILE`: JSON 儲存檔路徑
+### Storage
+
+- `STORE_PROVIDER`: `supabase` 或 `memory`，預設 `supabase`
+- `SUPABASE_URL`: Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY`: 後端用 service role key
+- `SUPABASE_EMAILS_TABLE`: 預設 `email_registrations`
+- `SUPABASE_ORDERS_TABLE`: 預設 `ebook_orders`
+- `SUPABASE_RECHARGE_CARDS_TABLE`: 預設 `recharge_cards`
+- `SUPABASE_BITREFILL_PURCHASES_TABLE`: 預設 `bitrefill_purchases`
+
+### Amazon / Bitrefill
+
 - `AMAZON_PROVIDER`: `mock` 或 `webhook`
 - `AMAZON_AUTOMATION_URL`: webhook provider 的外部自動化服務網址
 - `AMAZON_AUTOMATION_TOKEN`: webhook provider 的 Bearer token
@@ -145,59 +116,3 @@ npm start
 - `BITREFILL_AMAZON_PRODUCT_QUERY`: 預設搜尋 `Amazon.com Gift Card`
 - `BITREFILL_POLL_INTERVAL_MS`: 建單後輪詢 order 的間隔
 - `BITREFILL_ORDER_TIMEOUT_MS`: 等待拿到 code 的 timeout
-
-## Bitrefill 流程
-
-這個 backend 目前會依照 Bitrefill 官方 API 的常見流程做：
-
-1. 搜尋 `Amazon.com Gift Card` product
-2. 建立 invoice
-3. 用 Bitrefill `balance` 付款
-4. 查 invoice / order
-5. 輪詢到 order delivered
-6. 把 `redemptionCodes` 存進本地資料檔
-
-## 真的操作 Amazon 的 automation service
-
-這個 repo 也包含一個 Playwright automation service，對外提供：
-
-- `POST /redeem-gift-card`
-- `POST /send-ebook-gift`
-- `GET /health`
-
-### 1) 安裝瀏覽器
-
-```bash
-npm run playwright:install
-```
-
-### 2) 先登入 Amazon 一次
-
-```bash
-npm run amazon:login
-```
-
-會開一個真的瀏覽器。你手動登入 Amazon、完成 2FA 後，session 會存在 `AMAZON_USER_DATA_DIR`。
-
-### 3) 啟動 automation service
-
-```bash
-npm run automation:start
-```
-
-### 4) 讓 backend 改用真的 automation
-
-`.env` 這樣設：
-
-```env
-AMAZON_PROVIDER=webhook
-AMAZON_AUTOMATION_URL=http://127.0.0.1:3001
-AMAZON_EBOOK_ASIN=你的電子書ASIN
-AMAZON_EBOOK_TITLE=你的電子書名稱
-```
-
-然後再啟 backend：
-
-```bash
-npm start
-```

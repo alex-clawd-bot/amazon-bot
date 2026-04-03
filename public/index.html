@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>送你一本書</title>
+    <meta
+      name="description"
+      content="查詢 email 是否已登記，或立即加入名單，領取同一本電子書。"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero-card">
+        <div class="hero-copy">
+          <span class="eyebrow">Amazon Ebook Giveaway</span>
+          <h1>送你一本書</h1>
+          <p class="hero-text">
+            輸入你的 email，就能查詢是否已經登記，或立即加入送書名單。
+          </p>
+          <ul class="hero-points">
+            <li>每個 email 只會收到一次</li>
+            <li>所有人收到的都是同一本書</li>
+            <li>送出後可再次查詢狀態</li>
+          </ul>
+        </div>
+        <div class="book-card">
+          <img src="/assets/book-cover.jpg" alt="《幹安人生》書封" class="book-cover" />
+          <div class="book-meta">
+            <p class="book-kicker">本次贈書</p>
+            <h2 id="book-title">Your Kindle Ebook</h2>
+            <p class="book-author">趙長鵬</p>
+          </div>
+        </div>
+      </header>
+
+      <main class="content-grid">
+        <section class="panel stats-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">Live Stats</p>
+              <h2>目前送書進度</h2>
+            </div>
+            <button id="refresh-stats-button" class="ghost-button" type="button">重新整理</button>
+          </div>
+
+          <div class="stats-grid">
+            <article class="stat-tile">
+              <span class="stat-label">已登記</span>
+              <strong class="stat-value" id="registered-count">0</strong>
+            </article>
+            <article class="stat-tile accent">
+              <span class="stat-label">已送出</span>
+              <strong class="stat-value" id="sent-count">0</strong>
+            </article>
+            <article class="stat-tile">
+              <span class="stat-label">待送出</span>
+              <strong class="stat-value" id="pending-count">0</strong>
+            </article>
+            <article class="stat-tile">
+              <span class="stat-label">處理中</span>
+              <strong class="stat-value" id="processing-count">0</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel form-panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-label">Email Checker</p>
+              <h2>查詢或加入 email</h2>
+            </div>
+          </div>
+
+          <form id="email-form" class="email-form">
+            <label class="input-label" for="email-input">Email</label>
+            <div class="input-row">
+              <input
+                id="email-input"
+                name="email"
+                type="email"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              />
+            </div>
+
+            <div class="action-row">
+              <button id="check-button" class="secondary-button" type="button">檢查狀態</button>
+              <button id="register-button" class="primary-button" type="submit">加入名單</button>
+            </div>
+          </form>
+
+          <div id="feedback-banner" class="feedback-banner hidden" role="status" aria-live="polite"></div>
+
+          <div class="status-card" id="status-card">
+            <div class="status-header">
+              <span id="status-badge" class="status-badge neutral">尚未查詢</span>
+              <span id="status-email" class="status-email">請先輸入 email</span>
+            </div>
+            <p id="status-description" class="status-description">
+              你可以先檢查狀態，或直接加入送書名單。
+            </p>
+            <dl class="status-details">
+              <div>
+                <dt>是否已登記</dt>
+                <dd id="status-exists">-</dd>
+              </div>
+              <div>
+                <dt>是否已送書</dt>
+                <dd id="status-sent">-</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
