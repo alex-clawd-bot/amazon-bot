@@ -1,0 +1,231 @@
+import http from 'node:http';
+import { URL } from 'node:url';
+import { normalizeEmail } from './store.js';
+
+export function createServer({ config, store, amazonProvider, bitrefillClient }) {
+  return http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
+
+      if (request.method === 'GET' && url.pathname === '/health') {
+        return sendJson(response, 200, {
+          ok: true,
+          amazonProvider: amazonProvider.name,
+          bitrefillEnabled: bitrefillClient?.enabled ?? false,
+          ebook: {
+            asin: config.ebookAsin,
+            title: config.ebookTitle
+          }
+        });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/stats') {
+        return sendJson(response, 200, {
+          stats: store.getEmailStats()
+        });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/emails') {
+        const body = await readJson(request);
+        const email = normalizeEmail(body.email);
+
+        if (!isValidEmail(email)) {
+          return sendJson(response, 400, { error: 'A valid email is required.' });
+        }
+
+        const result = await store.addEmail(email);
+        const status = store.getEmailStatus(email);
+        return sendJson(response, result.created ? 201 : 200, {
+          created: result.created,
+          status,
+          stats: store.getEmailStats()
+        });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/emails/status') {
+        const email = normalizeEmail(url.searchParams.get('email'));
+
+        if (!isValidEmail(email)) {
+          return sendJson(response, 400, { error: 'A valid email is required.' });
+        }
+
+        return sendJson(response, 200, {
+          status: store.getEmailStatus(email)
+        });
+      }
+
+      if (request.method === 'GET' && url.pathname.startsWith('/api/emails/')) {
+        const email = normalizeEmail(decodeURIComponent(url.pathname.replace('/api/emails/', '')));
+        const record = store.getEmail(email);
+
+        if (!record) {
+          return sendJson(response, 404, { error: 'Email not found.' });
+        }
+
+        return sendJson(response, 200, {
+          email: record,
+          order: store.getOrderByEmail(email)
+        });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/bitrefill/amazon-gift-cards/purchase') {
+        const body = await readJson(request);
+        const amount = Number(body.amount);
+        const quantity = body.quantity == null ? 1 : Number.parseInt(body.quantity, 10);
+        const requestedByEmail = body.requestedByEmail ? normalizeEmail(body.requestedByEmail) : null;
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+          return sendJson(response, 400, { error: 'A positive numeric amount is required.' });
+        }
+
+        if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 20) {
+          return sendJson(response, 400, { error: 'Quantity must be an integer between 1 and 20.' });
+        }
+
+        if (requestedByEmail && !isValidEmail(requestedByEmail)) {
+          return sendJson(response, 400, { error: 'requestedByEmail must be a valid email.' });
+        }
+
+        const purchaseResult = await bitrefillClient.purchaseAmazonGiftCard({ amount, quantity });
+        const purchase = await store.saveBitrefillPurchase({
+          amount,
+          quantity,
+          requestedByEmail,
+          result: purchaseResult
+        });
+
+        return sendJson(response, 201, { purchase });
+      }
+
+      if (request.method === 'GET' && url.pathname.startsWith('/api/bitrefill/purchases/')) {
+        const purchaseId = decodeURIComponent(url.pathname.replace('/api/bitrefill/purchases/', ''));
+        const purchase = store.getBitrefillPurchaseById(purchaseId);
+
+        if (!purchase) {
+          return sendJson(response, 404, { error: 'Bitrefill purchase not found.' });
+        }
+
+        return sendJson(response, 200, { purchase });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/amazon/recharge-cards/redeem') {
+        const body = await readJson(request);
+        const code = String(body.code ?? '').trim();
+
+        if (!code) {
+          return sendJson(response, 400, { error: 'A recharge card code is required.' });
+        }
+
+        const reserveResult = await store.reserveRechargeCard(code);
+        if (!reserveResult.reserved) {
+          return sendJson(response, 409, {
+            error: 'This recharge card has already been redeemed or is processing.',
+            rechargeCard: reserveResult.rechargeCard
+          });
+        }
+
+        try {
+          const providerResult = await amazonProvider.redeemGiftCard({ code });
+          const rechargeCard = await store.completeRechargeCard(code, providerResult.providerRequestId);
+
+          return sendJson(response, 201, {
+            rechargeCard,
+            provider: amazonProvider.name
+          });
+        } catch (error) {
+          await store.releaseRechargeCard(code);
+          throw error;
+        }
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/amazon/orders') {
+        const body = await readJson(request);
+        const email = normalizeEmail(body.email);
+
+        if (!isValidEmail(email)) {
+          return sendJson(response, 400, { error: 'A valid email is required.' });
+        }
+
+        let reserveResult;
+        try {
+          reserveResult = await store.reserveOrderForEmail(email);
+        } catch (error) {
+          if (error.message === 'EMAIL_NOT_FOUND') {
+            return sendJson(response, 404, { error: 'Email not registered yet.' });
+          }
+
+          throw error;
+        }
+
+        if (!reserveResult.reserved) {
+          return sendJson(response, 409, {
+            error: 'This email has already received the ebook or is processing.',
+            email: reserveResult.email,
+            order: reserveResult.order
+          });
+        }
+
+        try {
+          const providerResult = await amazonProvider.orderEbookGift({
+            email,
+            ebookAsin: config.ebookAsin,
+            ebookTitle: config.ebookTitle
+          });
+
+          const orderResult = await store.completeOrder({
+            email,
+            ebookAsin: config.ebookAsin,
+            ebookTitle: config.ebookTitle,
+            providerOrderId: providerResult.providerOrderId
+          });
+
+          return sendJson(response, 201, {
+            order: orderResult.order,
+            provider: amazonProvider.name
+          });
+        } catch (error) {
+          await store.releaseOrder(email);
+          throw error;
+        }
+      }
+
+      return sendJson(response, 404, { error: 'Route not found.' });
+    } catch (error) {
+      const statusCode = error.statusCode ?? 500;
+      return sendJson(response, statusCode, {
+        error: error.message || 'Internal server error.'
+      });
+    }
+  });
+}
+
+async function readJson(request) {
+  const chunks = [];
+
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf8');
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const error = new Error('Invalid JSON body.');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function sendJson(response, statusCode, body) {
+  response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify(body, null, 2));
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}

@@ -1,0 +1,20 @@
+{
+  "name": "amazon-bot-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test",
+    "automation:start": "node src/automation-server.js",
+    "amazon:login": "node src/amazon-login.js",
+    "playwright:install": "playwright install chromium"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}
